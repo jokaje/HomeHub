@@ -84,6 +84,13 @@ class NavidromeRepository(
         return "$base/rest/stream.view?id=$id&$query"
     }
 
+    /** Voll aufgelöste Download-URL (Originaldatei) inkl. Auth – für Offline-Downloads. */
+    suspend fun downloadUrl(id: String): String? {
+        val base = urls.baseUrl(ServiceId.NAVIDROME) ?: return null
+        val query = authParams().entries.joinToString("&") { "${it.key}=${it.value}" }
+        return "$base/rest/download.view?id=$id&$query"
+    }
+
     /** Voll aufgelöste Cover-URL inkl. Auth – direkt für Coil nutzbar. */
     suspend fun coverUrl(coverArtId: String?, size: Int = 300): String? {
         if (coverArtId.isNullOrBlank()) return null

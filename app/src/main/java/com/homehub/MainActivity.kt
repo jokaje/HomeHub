@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.Settings
@@ -44,7 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import androidx.fragment.app.FragmentActivity
+import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.homehub.core.ServiceLocator
 import com.homehub.data.settings.ServiceId
@@ -57,6 +58,9 @@ import com.homehub.ui.immich.ImmichHomeScreen
 import com.homehub.ui.immich.ImmichViewModel
 import com.homehub.ui.navidrome.MiniPlayer
 import com.homehub.ui.navidrome.NavidromeScreen
+import com.homehub.ui.jellyfin.JellyfinPlayerScreen
+import com.homehub.ui.jellyfin.JellyfinScreen
+import com.homehub.ui.search.GlobalSearchScreen
 import com.homehub.ui.navidrome.NowPlayingScreen
 import com.homehub.ui.settings.SettingsScreen
 import com.homehub.ui.theme.HomeHubTheme
@@ -64,15 +68,22 @@ import com.homehub.ui.web.WebScreen
 import com.homehub.work.AutoUploadWorker
 
 /**
- * FragmentActivity statt ComponentActivity, damit BiometricPrompt
- * (gesperrter Ordner) funktioniert.
+ * AppCompatActivity (eine FragmentActivity), damit sowohl BiometricPrompt
+ * (gesperrter Ordner) als auch der Cast-Button (AppCompat-Theme) funktionieren.
  */
-class MainActivity : FragmentActivity() {
+class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         if (ServiceLocator.settings.autoUploadEnabled) {
             AutoUploadWorker.schedule(this)
+        }
+        // Benachrichtigungs-Berechtigung (Android 13+) für die Media-Steuerung
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 7)
         }
         setContent {
             HomeHubTheme { HomeHubRoot() }
@@ -88,6 +99,7 @@ val ALL_DESTINATIONS = listOf(
     Destination("hermes", "Hermes", "Sprich mit deinem Assistenten", Icons.Default.SmartToy),
     Destination("immich", "Fotos", "Fotos & Videos", Icons.Default.Photo),
     Destination("navidrome", "Musik", "Navidrome streamen", Icons.Default.MusicNote),
+    Destination("jellyfin", "Jellyfin", "Filme & Serien", Icons.Default.Movie),
     Destination("homeassistant", "Home", "Smart Home steuern", Icons.Default.Home),
     Destination("openwebui", "Open WebUI", "Chat mit deinem LLM", Icons.Default.Chat),
     Destination("comfy", "ComfyUI", "Bilder generieren", Icons.Default.Brush)
@@ -163,6 +175,7 @@ private fun HomeHubRoot() {
                     when (current) {
                         "dashboard" -> DashboardScreen(
                             onNavigate = { open(it) },
+                            onSearch = { overlays.add("globalsearch") },
                             onOpenMemory = { asset, list ->
                                 immichVm.viewerList = list
                                 overlays.add("asset/${asset.id}")
@@ -175,6 +188,9 @@ private fun HomeHubRoot() {
                             onOpenAlbum = { id -> overlays.add("album/$id") }
                         )
                         "navidrome" -> NavidromeScreen()
+                        "jellyfin" -> JellyfinScreen(onPlay = { id, fromStart ->
+                            overlays.add(if (fromStart) "jellyplayfs/$id" else "jellyplay/$id")
+                        })
                         "homeassistant" -> WebScreen(ServiceId.HOME_ASSISTANT)
                         "openwebui" -> WebScreen(ServiceId.OPEN_WEBUI)
                         "comfy" -> ComfyScreen()
@@ -189,6 +205,21 @@ private fun HomeHubRoot() {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 when {
                     overlay == "nowplaying" -> NowPlayingScreen(onBack = { overlays.removeAt(overlays.lastIndex) })
+                    overlay == "globalsearch" -> GlobalSearchScreen(
+                        onBack = { overlays.removeAt(overlays.lastIndex) },
+                        onPlayVideo = { id -> overlays.add("jellyplay/$id") },
+                        onOpenJellyfin = { overlays.removeAt(overlays.lastIndex); open("jellyfin") },
+                        onOpenPhoto = { id -> overlays.add("asset/$id") }
+                    )
+                    overlay.startsWith("jellyplayfs/") -> JellyfinPlayerScreen(
+                        itemId = overlay.removePrefix("jellyplayfs/"),
+                        fromStart = true,
+                        onBack = { overlays.removeAt(overlays.lastIndex) }
+                    )
+                    overlay.startsWith("jellyplay/") -> JellyfinPlayerScreen(
+                        itemId = overlay.removePrefix("jellyplay/"),
+                        onBack = { overlays.removeAt(overlays.lastIndex) }
+                    )
                     overlay.startsWith("asset/") -> AssetViewerScreen(
                         assetId = overlay.removePrefix("asset/"),
                         vm = immichVm,
@@ -235,7 +266,7 @@ private fun MoreEntry(title: String, subtitle: String, icon: ImageVector, onClic
     Card(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp)
+        shape = RoundedCornerShape(26.dp)
     ) {
         Row(
             Modifier.fillMaxWidth().padding(16.dp),

@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-enum class NavidromeTab { ALBEN, PLAYLISTS, ARTISTS, SUCHE }
+enum class NavidromeTab { ALBEN, PLAYLISTS, ARTISTS, SUCHE, OFFLINE }
 
 data class NavidromeUiState(
     val configured: Boolean = true,
@@ -27,6 +27,9 @@ data class NavidromeUiState(
     val searchAlbums: List<Album> = emptyList(),
     val searchSongs: List<Song> = emptyList(),
     val openAlbum: Album? = null,
+    val openPlaylist: Playlist? = null,
+    val offlineRevision: Int = 0,
+    val info: String? = null,
     val error: String? = null
 )
 
@@ -37,6 +40,13 @@ class NavidromeViewModel : ViewModel() {
     val state: StateFlow<NavidromeUiState> = _state
 
     val playerState = MusicPlayer.state
+    val downloads = ServiceLocator.musicDownloads.state
+
+    private val _starred = MutableStateFlow<Set<String>>(emptySet())
+    val starred: StateFlow<Set<String>> = _starred
+
+    /** Heruntergeladene Titel (für den Offline-Tab). */
+    fun offlineSongs(): List<Song> = ServiceLocator.musicDownloads.downloadedSongs()
 
     init { refresh() }
 
@@ -55,6 +65,13 @@ class NavidromeViewModel : ViewModel() {
         }
         _state.update { it.copy(configured = true) }
         loadAlbums()
+        loadPlaylists()
+        loadStarred()
+    }
+
+    private fun loadStarred() = viewModelScope.launch {
+        runCatching { repo.api.getStarred2().response }
+            .onSuccess { r -> _starred.value = r.starred2?.song.orEmpty().map { it.id }.toSet() }
     }
 
     private fun loadAlbums() = viewModelScope.launch {
@@ -111,6 +128,68 @@ class NavidromeViewModel : ViewModel() {
 
     fun closeAlbum() = _state.update { it.copy(openAlbum = null) }
 
+    /** Playlist-Detail öffnen (mit Titelliste). */
+    fun openPlaylist(playlist: Playlist) = viewModelScope.launch {
+        _state.update { it.copy(openPlaylist = playlist.copy(entries = emptyList()), loading = true) }
+        runCatching { repo.api.getPlaylist(playlist.id).response }
+            .onSuccess { r -> _state.update { it.copy(loading = false, openPlaylist = r.playlist ?: playlist) } }
+            .onFailure { e -> _state.update { it.copy(loading = false, error = friendly(e)) } }
+    }
+
+    fun closePlaylist() = _state.update { it.copy(openPlaylist = null) }
+
+    /** Neue Playlist anlegen (optional gleich mit Titeln). */
+    fun createPlaylist(name: String, songIds: List<String> = emptyList()) = viewModelScope.launch {
+        runCatching { repo.api.createPlaylist(name, songIds.ifEmpty { null }) }
+            .onSuccess { _state.update { it.copy(info = "Playlist \"$name\" erstellt") }; loadPlaylists() }
+            .onFailure { e -> _state.update { it.copy(error = friendly(e)) } }
+    }
+
+    /** Einen Titel zu einer Playlist hinzufügen. */
+    fun addToPlaylist(playlistId: String, songId: String) = viewModelScope.launch {
+        runCatching { repo.api.updatePlaylist(playlistId, songIdToAdd = listOf(songId)) }
+            .onSuccess { _state.update { it.copy(info = "Zur Playlist hinzugefügt") } }
+            .onFailure { e -> _state.update { it.copy(error = friendly(e)) } }
+    }
+
+    fun deletePlaylist(id: String) = viewModelScope.launch {
+        runCatching { repo.api.deletePlaylist(id) }
+            .onSuccess {
+                _state.update { it.copy(openPlaylist = null, info = "Playlist gelöscht") }
+                loadPlaylists()
+            }
+            .onFailure { e -> _state.update { it.copy(error = friendly(e)) } }
+    }
+
+    /** Favorit (Stern) umschalten – optimistisch. */
+    fun toggleStar(songId: String) = viewModelScope.launch {
+        val isStarred = songId in _starred.value
+        _starred.value = if (isStarred) _starred.value - songId else _starred.value + songId
+        runCatching { if (isStarred) repo.api.unstar(songId) else repo.api.star(songId) }
+            .onFailure {
+                // Rückgängig bei Fehler
+                _starred.value = if (isStarred) _starred.value + songId else _starred.value - songId
+            }
+    }
+
+    /** Zufallsmix aus der ganzen Bibliothek abspielen. */
+    fun playRandomMix() = viewModelScope.launch {
+        runCatching { repo.api.getRandomSongs(50).response }
+            .onSuccess { r ->
+                val songs = r.randomSongs?.song.orEmpty()
+                if (songs.isNotEmpty()) playSongs(songs, 0, shuffle = true)
+                else _state.update { it.copy(error = "Keine Titel für den Zufallsmix gefunden.") }
+            }
+            .onFailure { e -> _state.update { it.copy(error = friendly(e)) } }
+    }
+
+    fun shufflePlay(songs: List<Song>) {
+        if (songs.isEmpty()) return
+        playSongs(songs, (0 until songs.size).random(), shuffle = true)
+    }
+
+    fun dismissMessage() = _state.update { it.copy(info = null, error = null) }
+
     /** Playlist laden und sofort abspielen. */
     fun playPlaylist(playlist: Playlist) = viewModelScope.launch {
         runCatching { repo.api.getPlaylist(playlist.id).response }
@@ -121,22 +200,39 @@ class NavidromeViewModel : ViewModel() {
             .onFailure { e -> _state.update { it.copy(error = friendly(e)) } }
     }
 
-    /** Songs als Warteschlange abspielen (Stream-URLs werden vorab aufgelöst). */
-    fun playSongs(songs: List<Song>, startIndex: Int) = viewModelScope.launch {
+    /** Songs als Warteschlange abspielen. Heruntergeladene Titel werden lokal
+     *  abgespielt (offline), der Rest gestreamt. */
+    fun playSongs(songs: List<Song>, startIndex: Int, shuffle: Boolean = false) = viewModelScope.launch {
         if (songs.isEmpty()) return@launch
+        val dl = ServiceLocator.musicDownloads
         val tracks = songs.mapNotNull { s ->
-            val url = repo.streamUrl(s.id) ?: return@mapNotNull null
+            val cover = s.coverArt ?: s.albumId
+            val url = dl.localAudioUri(s.id) ?: repo.streamUrl(s.id) ?: return@mapNotNull null
             Track(
                 id = s.id,
                 title = s.title,
                 artist = s.artist,
                 album = s.album,
-                coverUrl = repo.coverUrl(s.coverArt ?: s.albumId),
+                coverUrl = dl.localCoverUri(cover) ?: repo.coverUrl(cover),
                 streamUrl = url,
                 durationSec = s.duration
             )
         }
-        MusicPlayer.playQueue(tracks, startIndex)
+        MusicPlayer.playQueue(tracks, startIndex, shuffle)
+    }
+
+    fun downloadAlbum(album: Album) = viewModelScope.launch {
+        ServiceLocator.musicDownloads.downloadAll(album.songs)
+    }
+
+    fun downloadSong(song: Song) = viewModelScope.launch {
+        ServiceLocator.musicDownloads.download(song)
+    }
+
+    fun deleteDownload(id: String) = viewModelScope.launch {
+        ServiceLocator.musicDownloads.delete(id)
+        // Offline-Liste neu zeichnen
+        _state.update { it.copy(offlineRevision = it.offlineRevision + 1) }
     }
 
     private fun friendly(e: Throwable): String = when (e) {

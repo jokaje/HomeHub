@@ -23,11 +23,16 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -78,6 +83,20 @@ fun NavidromeScreen(vm: NavidromeViewModel = viewModel()) {
         AlbumDetail(album = album, loading = state.loading, vm = vm)
         return
     }
+    // Playlist-Detail
+    state.openPlaylist?.let { pl ->
+        PlaylistDetail(playlist = pl, loading = state.loading, vm = vm)
+        return
+    }
+
+    // Kurze Rückmeldungen (Playlist erstellt, Fehler …)
+    val context = androidx.compose.ui.platform.LocalContext.current
+    androidx.compose.runtime.LaunchedEffect(state.info, state.error) {
+        (state.info ?: state.error)?.let {
+            android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_SHORT).show()
+            vm.dismissMessage()
+        }
+    }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Spacer(Modifier.height(12.dp))
@@ -93,10 +112,11 @@ fun NavidromeScreen(vm: NavidromeViewModel = viewModel()) {
         }
 
         when (state.tab) {
-            NavidromeTab.ALBEN -> AlbumGrid(state.albums) { vm.openAlbum(it) }
+            NavidromeTab.ALBEN -> AlbumGrid(state.albums, vm) { vm.openAlbum(it) }
             NavidromeTab.PLAYLISTS -> PlaylistList(state.playlists, vm)
             NavidromeTab.ARTISTS -> ArtistList(state.artists)
             NavidromeTab.SUCHE -> SearchTab(state, vm)
+            NavidromeTab.OFFLINE -> OfflineTab(state, vm)
         }
     }
 }
@@ -108,6 +128,7 @@ private fun NavidromeTabs(selected: NavidromeTab, onSelect: (NavidromeTab) -> Un
         TabChip("Playlists", selected == NavidromeTab.PLAYLISTS) { onSelect(NavidromeTab.PLAYLISTS) }
         TabChip("Künstler", selected == NavidromeTab.ARTISTS) { onSelect(NavidromeTab.ARTISTS) }
         TabChip("Suche", selected == NavidromeTab.SUCHE) { onSelect(NavidromeTab.SUCHE) }
+        TabChip("Offline", selected == NavidromeTab.OFFLINE) { onSelect(NavidromeTab.OFFLINE) }
     }
 }
 
@@ -129,25 +150,44 @@ private fun TabChip(label: String, active: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun AlbumGrid(albums: List<Album>, onOpen: (Album) -> Unit) {
-    if (albums.isEmpty()) { EmptyHint("Keine Alben gefunden."); return }
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp)
-    ) {
-        items(albums, key = { it.id }) { album ->
-            Column(Modifier.clickable { onOpen(album) }) {
-                Cover(album.coverArt, Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(16.dp)))
-                Spacer(Modifier.height(6.dp))
-                Text(album.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(
-                    album.artist,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis
-                )
+private fun AlbumGrid(albums: List<Album>, vm: NavidromeViewModel, onOpen: (Album) -> Unit) {
+    Column {
+        // Zufallsmix aus der ganzen Bibliothek
+        Row(
+            Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.primaryContainer)
+                .clickable { vm.playRandomMix() }
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Icon(Icons.Default.Shuffle, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+            Column {
+                Text("Zufallsmix", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                Text("Zufällige Titel aus deiner Bibliothek", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        if (albums.isEmpty()) { EmptyHint("Keine Alben gefunden."); return@Column }
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp)
+        ) {
+            items(albums, key = { it.id }) { album ->
+                Column(Modifier.clickable { onOpen(album) }) {
+                    Cover(album.coverArt, Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(16.dp)))
+                    Spacer(Modifier.height(6.dp))
+                    Text(album.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        album.artist,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
     }
@@ -155,13 +195,34 @@ private fun AlbumGrid(albums: List<Album>, onOpen: (Album) -> Unit) {
 
 @Composable
 private fun PlaylistList(playlists: List<Playlist>, vm: NavidromeViewModel) {
-    if (playlists.isEmpty()) { EmptyHint("Keine Playlists vorhanden."); return }
+    var showCreate by remember { mutableStateOf(false) }
+    if (showCreate) {
+        CreatePlaylistDialog(
+            onDismiss = { showCreate = false },
+            onCreate = { name -> vm.createPlaylist(name); showCreate = false }
+        )
+    }
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item {
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                    .clickable { showCreate = true }.padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(
+                    Modifier.size(54.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) { Icon(Icons.Default.Add, null, tint = MaterialTheme.colorScheme.onPrimaryContainer) }
+                Text("Neue Playlist", style = MaterialTheme.typography.titleMedium)
+            }
+        }
+        if (playlists.isEmpty()) {
+            item { Text("Noch keine Playlists.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
         items(playlists, key = { it.id }) { pl ->
             Row(
-                Modifier.fillMaxWidth().clickable {
-                    vm.playPlaylist(pl)
-                }.padding(vertical = 4.dp),
+                Modifier.fillMaxWidth().clickable { vm.openPlaylist(pl) }.padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -170,9 +231,82 @@ private fun PlaylistList(playlists: List<Playlist>, vm: NavidromeViewModel) {
                     Text(pl.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text("${pl.songCount} Titel", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Icon(Icons.Default.PlayArrow, null, tint = MaterialTheme.colorScheme.primary)
             }
         }
+    }
+}
+
+@Composable
+private fun CreatePlaylistDialog(onDismiss: () -> Unit, onCreate: (String) -> Unit) {
+    var name by remember { mutableStateOf("") }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Neue Playlist") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                singleLine = true,
+                placeholder = { Text("Name der Playlist") }
+            )
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(
+                onClick = { if (name.isNotBlank()) onCreate(name.trim()) },
+                enabled = name.isNotBlank()
+            ) { Text("Erstellen") }
+        },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Abbrechen") } }
+    )
+}
+
+@Composable
+private fun PlaylistDetail(playlist: Playlist, loading: Boolean, vm: NavidromeViewModel) {
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = { vm.closePlaylist() }) { Icon(Icons.Default.ArrowBack, "Zurück") }
+            Text(playlist.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            IconButton(onClick = { vm.deletePlaylist(playlist.id) }) {
+                Icon(Icons.Default.Delete, "Playlist löschen", tint = MaterialTheme.colorScheme.error)
+            }
+        }
+        LazyColumn(
+            Modifier.fillMaxSize().padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    PillButton("Abspielen", Icons.Default.PlayArrow) { vm.playSongs(playlist.entries, 0) }
+                    PillButton("Zufällig", Icons.Default.Shuffle, filled = false) { vm.shufflePlay(playlist.entries) }
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+            if (loading && playlist.entries.isEmpty()) {
+                item { Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
+            }
+            itemsIndexed(playlist.entries) { index, song ->
+                SongRow(song, index + 1, onClick = { vm.playSongs(playlist.entries, index) })
+            }
+            item { Spacer(Modifier.height(16.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun PillButton(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, filled: Boolean = true, onClick: () -> Unit) {
+    Row(
+        Modifier.clip(RoundedCornerShape(50))
+            .background(if (filled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Icon(icon, null, tint = if (filled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
+        Text(label, style = MaterialTheme.typography.labelMedium, color = if (filled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
     }
 }
 
@@ -230,7 +364,7 @@ private fun SearchTab(state: NavidromeUiState, vm: NavidromeViewModel) {
         if (state.searchSongs.isNotEmpty()) {
             item { Text("Titel", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary) }
             itemsIndexed(state.searchSongs) { index, song ->
-                SongRow(song, index + 1) { vm.playSongs(state.searchSongs, index) }
+                SongRow(song, index + 1, onClick = { vm.playSongs(state.searchSongs, index) })
             }
         }
     }
@@ -238,6 +372,7 @@ private fun SearchTab(state: NavidromeUiState, vm: NavidromeViewModel) {
 
 @Composable
 private fun AlbumDetail(album: Album, loading: Boolean, vm: NavidromeViewModel) {
+    val downloads by vm.downloads.collectAsState()
     Column(Modifier.fillMaxSize()) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
@@ -258,16 +393,40 @@ private fun AlbumDetail(album: Album, loading: Boolean, vm: NavidromeViewModel) 
                         Text(album.artist, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         album.year?.let { Text(it.toString(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         Spacer(Modifier.height(8.dp))
-                        Row(
-                            Modifier.clip(RoundedCornerShape(50))
-                                .background(MaterialTheme.colorScheme.primary)
-                                .clickable { vm.playSongs(album.songs, 0) }
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(Icons.Default.PlayArrow, null, tint = MaterialTheme.colorScheme.onPrimary)
-                            Text("Alle abspielen", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimary)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Row(
+                                Modifier.clip(RoundedCornerShape(50))
+                                    .background(MaterialTheme.colorScheme.primary)
+                                    .clickable { vm.playSongs(album.songs, 0) }
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(Icons.Default.PlayArrow, null, tint = MaterialTheme.colorScheme.onPrimary)
+                                Text("Abspielen", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimary)
+                            }
+                            // Zufällig
+                            Box(
+                                Modifier.size(40.dp).clip(RoundedCornerShape(50))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .clickable { vm.shufflePlay(album.songs) },
+                                contentAlignment = Alignment.Center
+                            ) { Icon(Icons.Default.Shuffle, "Zufällig abspielen", tint = MaterialTheme.colorScheme.onSurface) }
+                            // Album herunterladen
+                            val allDownloaded = album.songs.isNotEmpty() && album.songs.all { it.id in downloads.downloadedIds }
+                            val anyInProgress = album.songs.any { it.id in downloads.inProgress }
+                            Box(
+                                Modifier.size(40.dp).clip(RoundedCornerShape(50))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .clickable(enabled = !anyInProgress) { vm.downloadAlbum(album) },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                when {
+                                    anyInProgress -> CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                                    allDownloaded -> Icon(Icons.Default.DownloadDone, "Heruntergeladen", tint = MaterialTheme.colorScheme.primary)
+                                    else -> Icon(Icons.Default.Download, "Album herunterladen", tint = MaterialTheme.colorScheme.onSurface)
+                                }
+                            }
                         }
                     }
                 }
@@ -277,7 +436,13 @@ private fun AlbumDetail(album: Album, loading: Boolean, vm: NavidromeViewModel) 
                 item { Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
             }
             itemsIndexed(album.songs) { index, song ->
-                SongRow(song, song.track ?: (index + 1)) { vm.playSongs(album.songs, index) }
+                SongRow(
+                    song, song.track ?: (index + 1),
+                    downloaded = song.id in downloads.downloadedIds,
+                    downloading = song.id in downloads.inProgress,
+                    onClick = { vm.playSongs(album.songs, index) },
+                    onDownload = { vm.downloadSong(song) }
+                )
             }
             item { Spacer(Modifier.height(16.dp)) }
         }
@@ -285,7 +450,39 @@ private fun AlbumDetail(album: Album, loading: Boolean, vm: NavidromeViewModel) 
 }
 
 @Composable
-private fun SongRow(song: Song, number: Int, onClick: () -> Unit) {
+private fun OfflineTab(state: NavidromeUiState, vm: NavidromeViewModel) {
+    // offlineRevision triggert Neuzeichnen nach dem Löschen
+    val rev = state.offlineRevision
+    val songs = remember(rev) { vm.offlineSongs() }
+    if (songs.isEmpty()) {
+        EmptyHint("Noch nichts heruntergeladen.\nTippe in einem Album auf das Download-Symbol, um Titel offline verfügbar zu machen.")
+        return
+    }
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        itemsIndexed(songs) { index, song ->
+            SongRow(
+                song, index + 1,
+                downloaded = true,
+                downloading = false,
+                onClick = { vm.playSongs(songs, index) },
+                onDownload = { vm.deleteDownload(song.id) },
+                deleteMode = true
+            )
+        }
+        item { Spacer(Modifier.height(16.dp)) }
+    }
+}
+
+@Composable
+private fun SongRow(
+    song: Song,
+    number: Int,
+    downloaded: Boolean = false,
+    downloading: Boolean = false,
+    onClick: () -> Unit,
+    onDownload: (() -> Unit)? = null,
+    deleteMode: Boolean = false
+) {
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -302,6 +499,18 @@ private fun SongRow(song: Song, number: Int, onClick: () -> Unit) {
             Text(song.artist, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Text(formatDuration(song.duration), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (onDownload != null) {
+            when {
+                downloading -> CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                deleteMode -> IconButton(onClick = onDownload) {
+                    Icon(Icons.Default.Delete, "Entfernen", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                downloaded -> Icon(Icons.Default.DownloadDone, "Heruntergeladen", tint = MaterialTheme.colorScheme.primary)
+                else -> IconButton(onClick = onDownload) {
+                    Icon(Icons.Default.Download, "Herunterladen", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
     }
 }
 
@@ -319,9 +528,11 @@ fun Cover(
     modifier: Modifier = Modifier,
     fallback: androidx.compose.ui.graphics.vector.ImageVector = Icons.Default.MusicNote
 ) {
-    var url by remember(coverArt) { mutableStateOf<String?>(null) }
+    var url by remember(coverArt) {
+        mutableStateOf<String?>(com.homehub.core.ServiceLocator.musicDownloads.localCoverUri(coverArt))
+    }
     androidx.compose.runtime.LaunchedEffect(coverArt) {
-        url = com.homehub.core.ServiceLocator.navidrome.coverUrl(coverArt)
+        if (url == null) url = com.homehub.core.ServiceLocator.navidrome.coverUrl(coverArt)
     }
     Box(modifier.background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
         if (url != null) {

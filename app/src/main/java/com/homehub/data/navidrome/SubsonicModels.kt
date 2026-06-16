@@ -21,8 +21,12 @@ data class SubsonicResponse(
     val playlists: Playlists? = null,
     val playlist: Playlist? = null,
     val searchResult3: SearchResult3? = null,
-    val starred2: Starred2? = null
+    val starred2: Starred2? = null,
+    val randomSongs: RandomSongs? = null
 )
+
+@Serializable
+data class RandomSongs(@SerialName("song") val song: List<Song> = emptyList())
 
 @Serializable
 data class SubsonicError(val code: Int = 0, val message: String = "")

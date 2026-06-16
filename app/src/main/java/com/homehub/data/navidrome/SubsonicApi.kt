@@ -45,6 +45,25 @@ interface SubsonicApi {
     @GET("rest/getStarred2.view")
     suspend fun getStarred2(): SubsonicWrapper
 
+    @GET("rest/getRandomSongs.view")
+    suspend fun getRandomSongs(@Query("size") size: Int = 50): SubsonicWrapper
+
+    @GET("rest/createPlaylist.view")
+    suspend fun createPlaylist(
+        @Query("name") name: String,
+        @Query("songId") songIds: List<String>? = null
+    ): SubsonicWrapper
+
+    @GET("rest/updatePlaylist.view")
+    suspend fun updatePlaylist(
+        @Query("playlistId") playlistId: String,
+        @Query("songIdToAdd") songIdToAdd: List<String>? = null,
+        @Query("songIndexToRemove") songIndexToRemove: List<Int>? = null
+    ): SubsonicWrapper
+
+    @GET("rest/deletePlaylist.view")
+    suspend fun deletePlaylist(@Query("id") id: String): SubsonicWrapper
+
     @GET("rest/star.view")
     suspend fun star(@Query("id") id: String): SubsonicWrapper
 

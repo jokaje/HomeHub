@@ -18,9 +18,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.Refresh
@@ -43,7 +45,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -52,6 +57,12 @@ import com.homehub.core.ServiceLocator
 import com.homehub.data.network.Http
 import com.homehub.data.settings.ServiceId
 import com.homehub.ui.theme.Danger
+import com.homehub.ui.theme.SpotAmber
+import com.homehub.ui.theme.SpotBlue
+import com.homehub.ui.theme.SpotGreen
+import com.homehub.ui.theme.SpotPink
+import com.homehub.ui.theme.SpotTeal
+import com.homehub.ui.theme.SpotViolet
 import com.homehub.ui.theme.Success
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -137,6 +148,7 @@ class DashboardViewModel : ViewModel() {
 @Composable
 fun DashboardScreen(
     onNavigate: (String) -> Unit,
+    onSearch: () -> Unit = {},
     onOpenMemory: (com.homehub.data.immich.Asset, List<com.homehub.data.immich.Asset>) -> Unit = { _, _ -> },
     vm: DashboardViewModel = viewModel()
 ) {
@@ -144,18 +156,32 @@ fun DashboardScreen(
     val scroll = rememberScrollState()
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(scroll).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        Modifier.fillMaxSize().verticalScroll(scroll).padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // Hero
+        // Globale Suchleiste (öffnet die modulübergreifende Suche)
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(50))
+                .background(MaterialTheme.colorScheme.surface)
+                .clickable { onSearch() }
+                .padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Filme, Fotos, Musik durchsuchen …", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyLarge)
+        }
+
+        // Begrüßungs-Karte (Bento, volle Breite) mit sanftem Glow
         Box(
             Modifier
                 .fillMaxWidth()
-                .background(
-                    Brush.linearGradient(listOf(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), MaterialTheme.colorScheme.secondary.copy(alpha = 0.2f))),
-                    RoundedCornerShape(24.dp)
-                )
-                .padding(20.dp)
+                .clip(RoundedCornerShape(28.dp))
+                .background(MaterialTheme.colorScheme.surface)
+                .spotGlow(MaterialTheme.colorScheme.primary)
+                .padding(22.dp)
         ) {
             Column {
                 Text(greeting(), style = MaterialTheme.typography.headlineMedium)
@@ -173,7 +199,7 @@ fun DashboardScreen(
             }
         }
 
-        // Erinnerungen-Diashow
+        // Erinnerungen-Diashow (Bento-Karte)
         if (state.memories.isNotEmpty()) {
             MemoryCarousel(
                 memories = state.memories,
@@ -183,56 +209,123 @@ fun DashboardScreen(
 
         SectionHeader("Übersicht", "Deine Dienste")
 
-        ServiceCard(ServiceId.HERMES, Icons.Default.SmartToy, "Sprich mit deinem Assistenten",
-            state.statuses[ServiceId.HERMES]) { onNavigate("hermes") }
-        ServiceCard(ServiceId.IMMICH, Icons.Default.Photo, "Fotos & Videos",
-            state.statuses[ServiceId.IMMICH]) { onNavigate("immich") }
-        ServiceCard(ServiceId.NAVIDROME, Icons.Default.MusicNote, "Musik streamen",
-            state.statuses[ServiceId.NAVIDROME]) { onNavigate("navidrome") }
-        ServiceCard(ServiceId.HOME_ASSISTANT, Icons.Default.Home, "Smart Home steuern",
-            state.statuses[ServiceId.HOME_ASSISTANT]) { onNavigate("homeassistant") }
-        ServiceCard(ServiceId.OPEN_WEBUI, Icons.Default.Chat, "Chat mit deinem LLM",
-            state.statuses[ServiceId.OPEN_WEBUI]) { onNavigate("openwebui") }
-        ServiceCard(ServiceId.COMFYUI, Icons.Default.Palette, "Bilder generieren",
-            state.statuses[ServiceId.COMFYUI]) { onNavigate("comfy") }
+        // Bento-Anordnung: variable Kachelgrößen, je Dienst eine Spot-Farbe
+        // Reihe 1: Hermes groß (volle Breite, hoch) – das Herzstück
+        BentoTile(
+            id = ServiceId.HERMES, icon = Icons.Default.SmartToy, subtitle = "Assistent",
+            description = "Sprich mit deinem Assistenten", accent = SpotGreen,
+            status = state.statuses[ServiceId.HERMES], height = 132.dp,
+            onClick = { onNavigate("hermes") }
+        )
+        // Reihe 2: Fotos + Musik (zwei Quadrate)
+        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            BentoTile(
+                id = ServiceId.IMMICH, icon = Icons.Default.Photo, subtitle = "Galerie",
+                description = "Fotos & Videos", accent = SpotTeal,
+                status = state.statuses[ServiceId.IMMICH], height = 150.dp,
+                modifier = Modifier.weight(1f), onClick = { onNavigate("immich") }
+            )
+            BentoTile(
+                id = ServiceId.NAVIDROME, icon = Icons.Default.MusicNote, subtitle = "Musik",
+                description = "Streamen & offline", accent = SpotAmber,
+                status = state.statuses[ServiceId.NAVIDROME], height = 150.dp,
+                modifier = Modifier.weight(1f), onClick = { onNavigate("navidrome") }
+            )
+        }
+        // Reihe 3: Jellyfin (volle Breite) – Filme & Serien
+        BentoTile(
+            id = ServiceId.JELLYFIN, icon = Icons.Default.Movie, subtitle = "Mediathek",
+            description = "Filme & Serien streamen", accent = SpotViolet,
+            status = state.statuses[ServiceId.JELLYFIN], height = 118.dp,
+            onClick = { onNavigate("jellyfin") }
+        )
+        // Reihe 4: Home Assistant (volle Breite)
+        BentoTile(
+            id = ServiceId.HOME_ASSISTANT, icon = Icons.Default.Home, subtitle = "Smart Home",
+            description = "Geräte & Szenen steuern", accent = SpotBlue,
+            status = state.statuses[ServiceId.HOME_ASSISTANT], height = 110.dp,
+            onClick = { onNavigate("homeassistant") }
+        )
+        // Reihe 4: Open WebUI + ComfyUI (zwei Quadrate)
+        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            BentoTile(
+                id = ServiceId.OPEN_WEBUI, icon = Icons.Default.Chat, subtitle = "Chat",
+                description = "Chat mit deinem LLM", accent = SpotViolet,
+                status = state.statuses[ServiceId.OPEN_WEBUI], height = 150.dp,
+                modifier = Modifier.weight(1f), onClick = { onNavigate("openwebui") }
+            )
+            BentoTile(
+                id = ServiceId.COMFYUI, icon = Icons.Default.Palette, subtitle = "Bilder",
+                description = "Bilder generieren", accent = SpotPink,
+                status = state.statuses[ServiceId.COMFYUI], height = 150.dp,
+                modifier = Modifier.weight(1f), onClick = { onNavigate("comfy") }
+            )
+        }
+        Spacer(Modifier.height(4.dp))
     }
 }
 
 @Composable
-private fun ServiceCard(
+/**
+ * Sanfter "Spot Illumination"-Verlauf: ein dezenter Lichtkegel in Akzentfarbe,
+ * der diagonal von oben über die Karte läuft (wie eine Hintergrundbeleuchtung).
+ */
+private fun Modifier.spotGlow(accent: Color): Modifier = this.background(
+    Brush.linearGradient(
+        colors = listOf(accent.copy(alpha = 0.20f), accent.copy(alpha = 0.06f), Color.Transparent)
+    )
+)
+
+/** Bento-Kachel für einen Dienst: leuchtendes Icon, Eyebrow, Titel, Status. */
+@Composable
+private fun BentoTile(
     id: ServiceId,
     icon: ImageVector,
     subtitle: String,
+    description: String,
+    accent: Color,
     status: Status?,
+    height: Dp,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    Card(
-        onClick = onClick,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(22.dp),
-        modifier = Modifier.fillMaxWidth()
+    Box(
+        modifier
+            .fillMaxWidth()
+            .height(height)
+            .clip(RoundedCornerShape(26.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .spotGlow(accent)
+            .clickable(onClick = onClick)
+            .padding(18.dp)
     ) {
+        StatusDot(status ?: Status.UNKNOWN, Modifier.align(Alignment.TopEnd))
+
         Row(
-            Modifier.fillMaxWidth().padding(18.dp),
-            verticalAlignment = Alignment.CenterVertically
+            Modifier.fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            // Icon im runden Quadrat mit leuchtendem Akzent
             Box(
                 Modifier
                     .size(46.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(14.dp)),
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(accent.copy(alpha = 0.18f)),
                 contentAlignment = Alignment.Center
-            ) { Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
-            Spacer(Modifier.size(14.dp))
+            ) { Icon(icon, contentDescription = null, tint = accent) }
+
             Column(Modifier.weight(1f)) {
-                // grünes Eyebrow-Label + fetter Titel – nzb360-Kartenmuster
+                Text(subtitle.uppercase(), style = MaterialTheme.typography.labelMedium, color = accent, maxLines = 1)
+                Text(id.title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
-                    subtitle,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary
+                    description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
-                Text(id.title, style = MaterialTheme.typography.titleMedium)
             }
-            StatusDot(status ?: Status.UNKNOWN)
         }
     }
 }
@@ -340,14 +433,14 @@ private fun SectionHeader(eyebrow: String, title: String) {
 }
 
 @Composable
-private fun StatusDot(status: Status) {
+private fun StatusDot(status: Status, modifier: Modifier = Modifier) {
     val (color, label) = when (status) {
         Status.ONLINE -> Success to "online"
         Status.OFFLINE -> Danger to "offline"
         Status.UNCONFIGURED -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f) to "—"
         Status.UNKNOWN -> MaterialTheme.colorScheme.onSurfaceVariant to "…"
     }
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(8.dp).background(color, CircleShape))
         Spacer(Modifier.size(6.dp))
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

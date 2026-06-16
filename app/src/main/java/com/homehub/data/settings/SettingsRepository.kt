@@ -14,7 +14,8 @@ enum class ServiceId(val title: String) {
     HERMES("Hermes Agent"),
     OPEN_WEBUI("Open WebUI"),
     COMFYUI("ComfyUI"),
-    NAVIDROME("Navidrome");
+    NAVIDROME("Navidrome"),
+    JELLYFIN("Jellyfin");
 }
 
 /**

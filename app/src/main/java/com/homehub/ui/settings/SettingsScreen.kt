@@ -72,6 +72,11 @@ private val specs = mapOf(
         tokenLabel = "Passwort",
         extraLabel = "Benutzername",
         hint = "Navidrome-Zugangsdaten. Übliche Adresse: https://musik.deinedomain.de"
+    ),
+    ServiceId.JELLYFIN to FieldSpec(
+        tokenLabel = "Passwort",
+        extraLabel = "Benutzername",
+        hint = "Jellyfin-Zugangsdaten. Übliche Adresse: https://jellyfin.deinedomain.de"
     )
 )
 
@@ -98,7 +103,7 @@ fun SettingsScreen() {
             // Darstellung
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(22.dp)
+                shape = RoundedCornerShape(26.dp)
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Darstellung", style = MaterialTheme.typography.titleMedium)
@@ -140,7 +145,7 @@ fun SettingsScreen() {
             // Auto-Upload
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(22.dp)
+                shape = RoundedCornerShape(26.dp)
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Immich Auto-Upload", style = MaterialTheme.typography.titleMedium)
@@ -324,7 +329,7 @@ private fun ServiceSection(id: ServiceId, onSaved: () -> Unit) {
 
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(22.dp)
+        shape = RoundedCornerShape(26.dp)
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(id.title, style = MaterialTheme.typography.titleMedium)
@@ -382,7 +387,7 @@ private fun BottomTabsCard() {
     val selected by ServiceLocator.settings.bottomTabs.collectAsState()
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(22.dp)
+        shape = RoundedCornerShape(26.dp)
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Untere Leiste", style = MaterialTheme.typography.titleMedium)

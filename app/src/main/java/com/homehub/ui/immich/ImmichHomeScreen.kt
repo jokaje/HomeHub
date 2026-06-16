@@ -404,7 +404,7 @@ private fun TimelineTab(state: ImmichUiState, vm: ImmichViewModel, onOpenAsset: 
             title = { Text("Noch nicht gesichert") },
             text = {
                 Text(
-                    "„${item.name}“ liegt nur auf diesem Gerät und wird beim nächsten " +
+                    "'${item.name}' liegt nur auf diesem Gerät und wird beim nächsten " +
                         "automatischen Backup gesichert – oder du lädst es jetzt direkt hoch."
                 )
             },
