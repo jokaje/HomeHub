@@ -1,6 +1,5 @@
 package com.homehub.ui.jellyfin
 
-import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -33,7 +32,6 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
-import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.google.android.gms.cast.framework.CastContext
@@ -48,7 +46,6 @@ import kotlinx.coroutines.isActive
  * - Meldet Start / Fortschritt / Stopp an Jellyfin zurück.
  * - Cast: verbindet sich ein Chromecast, übernimmt der CastPlayer (HLS).
  */
-@OptIn(UnstableApi::class)
 @Composable
 fun JellyfinPlayerScreen(itemId: String, fromStart: Boolean = false, onBack: () -> Unit) {
     val context = LocalContext.current

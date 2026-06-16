@@ -87,6 +87,7 @@ fun SettingsScreen() {
     val snackbar = remember { SnackbarHostState() }
     var autoUpload by remember { mutableStateOf(ServiceLocator.settings.autoUploadEnabled) }
     var autoUploadVideos by remember { mutableStateOf(ServiceLocator.settings.autoUploadVideos) }
+    var allowMobile by remember { mutableStateOf(ServiceLocator.settings.allowMobileData) }
     var showFolderDialog by remember { mutableStateOf(false) }
     var deviceFolders by remember { mutableStateOf<List<DeviceFolder>>(emptyList()) }
     val mediaPermission = androidx.activity.compose.rememberLauncherForActivityResult(
@@ -174,6 +175,21 @@ fun SettingsScreen() {
                             ServiceLocator.settings.autoUploadVideos = it
                         })
                     }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Über mobile Daten erlauben")
+                            Text(
+                                "Backup auch ohne WLAN. Downloads laufen ohnehin über jede Verbindung.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(checked = allowMobile, onCheckedChange = {
+                            allowMobile = it
+                            ServiceLocator.settings.allowMobileData = it
+                            if (autoUpload) AutoUploadWorker.schedule(context) // Bedingung aktualisieren
+                        })
+                    }
                     // Ordnerauswahl
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
@@ -195,9 +211,30 @@ fun SettingsScreen() {
                         ) { Text("Auswählen") }
                     }
                     if (autoUpload) {
-                        Button(onClick = { AutoUploadWorker.runNow(context) }) {
+                        Button(onClick = {
+                            val granted = requiredMediaPermissions().any {
+                                androidx.core.content.ContextCompat.checkSelfPermission(context, it) ==
+                                    android.content.pm.PackageManager.PERMISSION_GRANTED
+                            }
+                            if (!granted) {
+                                mediaPermission.launch(requiredMediaPermissions())
+                                scope.launch { snackbar.showSnackbar("Bitte zuerst Medienzugriff erlauben.") }
+                            } else {
+                                AutoUploadWorker.runNow(context)
+                                scope.launch { snackbar.showSnackbar("Backup gestartet - Fortschritt in der Benachrichtigung.") }
+                            }
+                        }) {
                             Text("Jetzt sichern")
                         }
+                        androidx.compose.material3.TextButton(onClick = {
+                            runCatching {
+                                val intent = android.content.Intent(
+                                    android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                    android.net.Uri.fromParts("package", context.packageName, null)
+                                )
+                                context.startActivity(intent)
+                            }
+                        }) { Text("App-Berechtigungen oeffnen") }
                     }
                 }
             }
@@ -250,7 +287,11 @@ private fun loadDeviceFolders(context: android.content.Context): List<DeviceFold
 }
 
 private fun requiredMediaPermissions(): Array<String> =
-    if (android.os.Build.VERSION.SDK_INT >= 33) arrayOf(
+    if (android.os.Build.VERSION.SDK_INT >= 34) arrayOf(
+        android.Manifest.permission.READ_MEDIA_IMAGES,
+        android.Manifest.permission.READ_MEDIA_VIDEO,
+        android.Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED
+    ) else if (android.os.Build.VERSION.SDK_INT >= 33) arrayOf(
         android.Manifest.permission.READ_MEDIA_IMAGES,
         android.Manifest.permission.READ_MEDIA_VIDEO
     ) else arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE)

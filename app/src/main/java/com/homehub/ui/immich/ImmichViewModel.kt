@@ -34,6 +34,7 @@ data class ImmichUiState(
     val loading: Boolean = false,
     val error: String? = null,
     val info: String? = null,
+    val localScanStatus: String? = null,
     // Zähler für Mutationen: Ansichten laden sich bei Änderung automatisch neu
     val revision: Int = 0
 )
@@ -100,6 +101,7 @@ class ImmichViewModel : ViewModel() {
         _state.update { it.copy(configured = true, loading = true) }
         fallbackMode = false; fallbackPage = 1; fallbackHasMore = true
         scanLockedIds() // #locked-IDs im Hintergrund ermitteln
+        scanLocalPending() // lokale, noch nicht gesicherte Medien einblenden
 
         runCatching { repo.api.timelineBuckets() }
             .onSuccess { buckets ->
@@ -359,22 +361,35 @@ class ImmichViewModel : ViewModel() {
      * die noch NICHT auf dem Server liegen. Erkennung per SHA-1 +
      * Immich bulk-upload-check; Ergebnisse werden gecacht.
      */
-    fun scanLocalPending() = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+    fun scanLocalPending(report: Boolean = false) = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
         val settings = ServiceLocator.settings
         if (!settings.get(com.homehub.data.settings.ServiceId.IMMICH).isConfigured) return@launch
         val context = ServiceLocator.appContext
         val resolver = context.contentResolver
 
-        val items = com.homehub.data.local.LocalMedia.query(
+        val granted = mediaPermissionGranted(context)
+        val allOnDevice = com.homehub.data.local.LocalMedia.query(
             context,
             buckets = settings.autoUploadBuckets,
             includeVideos = settings.autoUploadVideos
         )
+        val folderInfo = if (settings.autoUploadBuckets.isEmpty()) "alle Ordner" else "${settings.autoUploadBuckets.size} Ordner"
+        val items = allOnDevice
             .filter { it.mediaId !in settings.uploadedMediaIds }
             .take(400) // Obergrenze, damit Hashing & Check flott bleiben
 
         if (items.isEmpty()) {
-            _state.update { it.copy(localPending = emptyList()) }; return@launch
+            val status = if (!granted) "Kein Medienzugriff erlaubt"
+            else "Geraet: ${allOnDevice.size} Medien ($folderInfo), 0 neu"
+            _state.update { it.copy(localPending = emptyList(), localScanStatus = status) }
+            if (report) {
+                val msg = if (!granted)
+                    "Kein Medienzugriff erlaubt - bitte in den App-Einstellungen 'Fotos und Videos' erlauben."
+                else
+                    "Geraet: ${allOnDevice.size} Medien gefunden ($folderInfo), alle bereits gesichert."
+                _state.update { it.copy(info = msg) }
+            }
+            return@launch
         }
 
         // SHA-1 berechnen (mit Cache)
@@ -385,7 +400,7 @@ class ImmichViewModel : ViewModel() {
             sha?.let { item to it }
         }
 
-        // Auf dem Server prüfen, was schon existiert
+        // Auf dem Server pruefen, was schon existiert
         val alreadyUploaded = mutableSetOf<String>()
         withSha.chunked(100).forEach { batch ->
             runCatching {
@@ -402,7 +417,20 @@ class ImmichViewModel : ViewModel() {
         settings.markUploaded(alreadyUploaded)
 
         val pending = withSha.map { it.first }.filter { it.mediaId !in alreadyUploaded }
-        _state.update { it.copy(localPending = pending) }
+        _state.update { it.copy(localPending = pending, localScanStatus = "Geraet: ${allOnDevice.size} Medien ($folderInfo), ${pending.size} neu") }
+        if (report) {
+            _state.update { it.copy(info = "Geraet: ${allOnDevice.size} Medien, davon ${pending.size} noch nicht gesichert.") }
+        }
+    }
+
+    private fun mediaPermissionGranted(context: android.content.Context): Boolean {
+        val perms = if (android.os.Build.VERSION.SDK_INT >= 33)
+            listOf(android.Manifest.permission.READ_MEDIA_IMAGES, android.Manifest.permission.READ_MEDIA_VIDEO)
+        else listOf(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+        return perms.any {
+            androidx.core.content.ContextCompat.checkSelfPermission(context, it) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
     }
 
     /** Lädt ein einzelnes lokales Medium sofort hoch. */

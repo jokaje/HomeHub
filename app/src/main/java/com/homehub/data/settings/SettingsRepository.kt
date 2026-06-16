@@ -74,6 +74,11 @@ class SettingsRepository(context: Context) {
         get() = prefs.getBoolean("auto_upload_videos", true)
         set(v) { prefs.edit().putBoolean("auto_upload_videos", v).apply() }
 
+    /** Erlaubt Up-/Downloads auch über mobile Daten (sonst nur WLAN). */
+    var allowMobileData: Boolean
+        get() = prefs.getBoolean("allow_mobile_data", false)
+        set(v) { prefs.edit().putBoolean("allow_mobile_data", v).apply() }
+
     /**
      * Geräte-Ordner (MediaStore-Bucket-IDs), die gesichert werden sollen.
      * Leere Menge = alle Ordner sichern.

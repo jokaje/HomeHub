@@ -68,7 +68,7 @@ fun ImmichHomeScreen(
 
     // Medien-Berechtigung: ohne sie kann die App lokale (noch nicht gesicherte)
     // Fotos weder anzeigen noch hochladen.
-    fun hasMediaPermission(): Boolean = mediaPermissionList().all {
+    fun hasMediaPermission(): Boolean = mediaPermissionList().any {
         androidx.core.content.ContextCompat.checkSelfPermission(context, it) ==
             android.content.pm.PackageManager.PERMISSION_GRANTED
     }
@@ -80,9 +80,31 @@ fun ImmichHomeScreen(
         if (mediaGranted) vm.scanLocalPending()
     }
 
-    // Lokale, noch nicht gesicherte Medien scannen (sobald Berechtigung da ist)
+    // Lokale Medien scannen (die Funktion meldet selbst, falls die Berechtigung fehlt)
     LaunchedEffect(state.configured, mediaGranted) {
-        if (state.configured && mediaGranted) vm.scanLocalPending()
+        if (state.configured) vm.scanLocalPending()
+    }
+
+    // Beim ersten Mal automatisch nach Medienzugriff fragen
+    var askedForMedia by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (!mediaGranted && !askedForMedia) {
+            askedForMedia = true
+            permissionLauncher.launch(mediaPermissionList())
+        }
+    }
+
+    // Beim Zurueckkehren in die App: Berechtigung neu pruefen + neue Aufnahmen erfassen
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                mediaGranted = hasMediaPermission()
+                vm.scanLocalPending()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     // Manueller Upload über den System-Fotopicker (mit SHA-Duplikatprüfung)
@@ -163,6 +185,14 @@ fun ImmichHomeScreen(
         androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
             when (tab) {
                 0 -> Column(Modifier.fillMaxSize()) {
+                    state.localScanStatus?.let { status ->
+                        Text(
+                            "Lokal: $status",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+                        )
+                    }
                     if (!mediaGranted) {
                         androidx.compose.material3.Surface(
                             color = MaterialTheme.colorScheme.secondaryContainer,
@@ -290,15 +320,31 @@ private fun TimelineTab(state: ImmichUiState, vm: ImmichViewModel, onOpenAsset: 
             }
     }
 
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     var refreshing by remember { mutableStateOf(false) }
-    LaunchedEffect(state.loading) { if (!state.loading) refreshing = false }
+    // Nach einem Pull-to-Refresh: Spinner zuverlaessig beenden (mit Timeout, damit
+    // er nie haengen bleibt) und danach robust an den Listenanfang scrollen.
+    LaunchedEffect(refreshing) {
+        if (!refreshing) return@LaunchedEffect
+        kotlinx.coroutines.delay(350) // refreshTimeline Zeit geben, loading=true zu setzen
+        val start = System.currentTimeMillis()
+        while (state.loading && System.currentTimeMillis() - start < 8000) {
+            kotlinx.coroutines.delay(100)
+        }
+        // Mehrfach nach oben verankern, gegen die key-basierte Positionswiederherstellung
+        repeat(5) {
+            listState.scrollToItem(0)
+            kotlinx.coroutines.delay(120)
+        }
+        refreshing = false
+    }
 
     androidx.compose.material3.pulltorefresh.PullToRefreshBox(
         isRefreshing = refreshing,
         onRefresh = {
             refreshing = true
             vm.refreshTimeline()
-            vm.scanLocalPending()
+            vm.scanLocalPending(report = true)
         },
         modifier = Modifier
             .fillMaxSize()
@@ -319,7 +365,7 @@ private fun TimelineTab(state: ImmichUiState, vm: ImmichViewModel, onOpenAsset: 
                 }
             }
     ) {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 80.dp)) {
+        LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = 80.dp)) {
             sections.forEach { section ->
                 item(key = "header-${section.key}") {
                     if (granularity == "MONTH" && !section.key.startsWith("day-")) {
@@ -443,7 +489,11 @@ private fun formatDay(day: String): String = runCatching {
 
 
 private fun mediaPermissionList(): Array<String> =
-    if (android.os.Build.VERSION.SDK_INT >= 33) arrayOf(
+    if (android.os.Build.VERSION.SDK_INT >= 34) arrayOf(
+        android.Manifest.permission.READ_MEDIA_IMAGES,
+        android.Manifest.permission.READ_MEDIA_VIDEO,
+        android.Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED
+    ) else if (android.os.Build.VERSION.SDK_INT >= 33) arrayOf(
         android.Manifest.permission.READ_MEDIA_IMAGES,
         android.Manifest.permission.READ_MEDIA_VIDEO
     ) else arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE)

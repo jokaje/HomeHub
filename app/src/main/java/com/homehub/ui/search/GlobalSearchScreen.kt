@@ -45,11 +45,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.homehub.core.ServiceLocator
 import com.homehub.data.immich.Asset
 import com.homehub.data.jellyfin.JellyItem
@@ -148,9 +150,26 @@ private fun VideoResult(item: JellyItem, onClick: () -> Unit) {
 
 @Composable
 private fun PhotoResult(asset: Asset, onClick: () -> Unit) {
+    val loader = com.homehub.ui.immich.rememberImmichImageLoader()
     var url by remember(asset.id) { mutableStateOf<String?>(null) }
     LaunchedEffect(asset.id) { url = ServiceLocator.immich.thumbnailUrl(asset.id) }
-    ThumbBox(url, Modifier.size(110.dp).clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick), Icons.Default.Image)
+    Box(
+        Modifier.size(110.dp).clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        if (url != null) {
+            AsyncImage(
+                model = ImageRequest.Builder(LocalContext.current).data(url).build(),
+                imageLoader = loader,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            Icon(Icons.Default.Image, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
 }
 
 @Composable
